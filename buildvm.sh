@@ -42,16 +42,28 @@ fi
 # Stop on failures and output command to terminal
 set -xe
 
+# Optional scratch directory sync
+if [[ ! -z ${FROMSCRATCH+x} ]]; then
+  rsync -avr -H --delete "$FROMSCRATCH" "$VAGRANTDIR/scratch"
+fi
+
 # puppet-control repository checkout
-cd "$VAGRANTDIR"
+cd "$VAGRANTDIR/scratch/puppet-control"
 checkout_branch
 
+# Optional init.pp manifest override
+if [[ ! -z ${INIT_OVERRIDE+x} ]]; then
+  PUPPET_INIT="$VAGRANTDIR/scratch/puppet-control/manifests/$INIT_OVERRIDE"
+  rm -rf "$PUPPET_INIT/init.pp"
+  cp "$PUPPET_INIT/$VAGRANTENV-init.txt" "$PUPPET_INIT/init.pp"
+fi
+
 # puppet-hiera respository checkout
-cd "$HIERADIR"
+cd "$VAGRANTDIR/scratch/puppet-hiera"
 checkout_branch
 
 # puppet-profiles repository checkout and master rebase
-cd "$PROFILESDIR"
+cd "$VAGRANTDIR/scratch/puppet-profiles"
 git checkout master
 git pull
 git checkout $VAGRANTBRANCH

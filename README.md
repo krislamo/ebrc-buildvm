@@ -24,15 +24,22 @@ i.e. `./buildvm.sh otherenv`
   - The following repositories are assumed to have this branch name: `puppet-control`, `puppet-hiera`, `puppet-profiles`. Additionally, the Puppet environment used for provisioning is expected to have this shared name.
 
 
-* `VAGRANTDIR` - The `puppet-control` directory on the host machine
-  - A primary assumption is that your `puppet-control` repository exists under the `vagrant-puppet4` scratch directory, e.g., `vagrant-puppet4/scratch/puppet-control`. This setup allows vagrant commands to be called inside the control directory despite the `Vagrantfile` living two directory levels up. This also allows for a quick `puppet apply` without time-consuming r10k deployments on every change.
+* `VAGRANTDIR` - The `vagrant-puppet4` directory on the host machine
+  - A primary assumption is that your `puppet-control`, `puppet-hiera`, and `puppet-profiles` repositories exist under the `vagrant-puppet4` scratch directory, e.g., `vagrant-puppet4/scratch/puppet-control`. This setup allows for a quick `puppet apply` without time-consuming r10k deployments on every change.
 
-* `HIERADIR` - The `puppet-hiera` directory on the host machine
-  - This should exist under the `vagrant-puppet4` scratch directory for quick provisions without r10k
+* `FROMSCRATCH` (OPTIONAL) - A directory to copy data from into the `$VAGRANTDIR/scratch` directory
+  - If this option is set, the script will rsync data from the specified location into the vagrant-puppet4 scratch directory. This is useful for saving disk space (via hard links) for multiple virtual machines and centralizing puppet code editing.
 
-* `PROFILESDIR` - The `puppet-profiles` directory on the host machine
-  - This should exist under the `vagrant-puppet4` scratch directory for quick provisions without r10k
-
+* `INIT_OVERRIDE` (OPTIONAL) - A subdirectory at `puppet-control/manfiests/$INIT_OVERRIDE/` to move init.pp files
+    - This setup requires a slight modification to `puppet-control/manifests/site.pp` to include a subdirectory with a `init.pp` file.<br/>e.g.,
+      ```
+      node default {
+        include mytests
+      }
+      ```
+    - In the example above, `INIT_OVERRIDE=mytests`
+    - This allows for a centralized directory of multiple `init.pp` files for different virtual machines. The option will remove `puppet-control/manifests/$INIT_OVERRIDE/init.pp` and replace it with `puppet-control/manifests/$INIT_OVERRIDE/$VAGRANTENV-init.txt` automatically before provisioning.
+    - Do not place data into the `$INIT_OVERRIDE/init.pp` file directly with this set.
 
 #### Copyrights and Licenses
 
