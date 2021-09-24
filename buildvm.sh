@@ -36,6 +36,9 @@ fi
 # Source environment
 . "$PWD/env/$VAGRANTENV"
 
+# Default puppet-apply manifest location on the virtual machine
+PUPPETINIT="/etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests"
+
 # Prompt user about destructive virtual machine restore
 # RETURN 1 on decline
 echo "You are about to restore '$VAGRANTBOX' to '$VAGRANTSNAP'"
@@ -62,7 +65,6 @@ checkout_branch
 # Optional init.pp manifest override
 # Fall back to using puppet-control/manifests/site.pp for savm
 if [[ ! -z ${INITOVERRIDE+x} ]]; then
-  PUPPETINIT="/etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests"
   HOSTINITPATH="$PUPPETCONTROL/manifests/$INITOVERRIDE"
   rm -rf "$HOSTINITPATH/init.pp"
   cp "$HOSTINITPATH/$VAGRANTENV-init.txt" "$HOSTINITPATH/init.pp"
