@@ -1,17 +1,22 @@
 #!/bin/bash
 
-# Checkout specified branch if not currently checked out
+# Function definition to checkout branch $VAGRANTENV if it isn't already there
 checkout_branch () {
-  CURRENT_BRANCH=$(git status | awk 'NR==1{print $3}')
-  if [[ ! "$VAGRANTBRANCH" == "$CURRENT_BRANCH" ]]; then
+  CURRENTBRANCH=$(git status | awk 'NR==1{print $3}')
+  if [[ ! "$VAGRANTBRANCH" == "$CURRENTBRANCH" ]]; then
     git checkout "$VAGRANTBRANCH"
   fi
 }
 
+# The script starts here
 # Create environment directory
 mkdir -p "$PWD/env"
 
-# Set VAGRANTENV from argv[1] if set
+# If argv[1] exists, set VAGRANTENV to it
+# RETURN 1 if file does not exist
+#
+# If argv[1] isn't set, set VAGRANTENV to 'main'
+# RETURN 1 if file does not exist
 if [[ ! -z ${1+x} ]]; then
   if [[ -f "./env/$1" ]]; then
     VAGRANTENV=$1
@@ -28,18 +33,20 @@ else
   fi
 fi
 
-# Source environment variables
+# Source environment
 . "$PWD/env/$VAGRANTENV"
 
 # Prompt user about destructive virtual machine restore
+# RETURN 1 on decline
 echo "You are about to restore '$VAGRANTBOX' to '$VAGRANTSNAP'"
-read -r -p "Are you sure? [y/N] " response
-if [[ ! "$response" =~ ^([yY])$ ]]; then
-  echo "User declined to restore VM"
+read -r -p "Are you sure? [y/N] " RESPONSE
+if [[ ! "$RESPONSE" =~ ^([yY])$ ]]; then
+  echo "FATAL: $USER declined to restore VM"
   exit 1
 fi
 
-# Stop on failures and output command to terminal
+# System changes start here
+# Stop on failures and output commands to terminal
 set -xe
 
 # Optional scratch directory sync
@@ -48,21 +55,26 @@ if [[ ! -z ${FROMSCRATCH+x} ]]; then
 fi
 
 # puppet-control repository checkout
-cd "$VAGRANTDIR/scratch/puppet-control"
+PUPPETCONTROL="$VAGRANTDIR/scratch/puppet-control"
+cd "$PUPPETCONTROL"
 checkout_branch
 
 # Optional init.pp manifest override
-if [[ ! -z ${INIT_OVERRIDE+x} ]]; then
-  PUPPET_INIT="$VAGRANTDIR/scratch/puppet-control/manifests/$INIT_OVERRIDE"
-  rm -rf "$PUPPET_INIT/init.pp"
-  cp "$PUPPET_INIT/$VAGRANTENV-init.txt" "$PUPPET_INIT/init.pp"
+# Fall back to using puppet-control/manifests/site.pp for savm
+if [[ ! -z ${INITOVERRIDE+x} ]]; then
+  PUPPETINIT="/etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests"
+  HOSTINITPATH="$PUPPETCONTROL/manifests/$INITOVERRIDE"
+  rm -rf "$HOSTINITPATH/init.pp"
+  cp "$HOSTINITPATH/$VAGRANTENV-init.txt" "$HOSTINITPATH/init.pp"
+else
+  PUPPETINIT="$PUPPETINIT/site.pp"
 fi
 
 # puppet-hiera respository checkout
 cd "$VAGRANTDIR/scratch/puppet-hiera"
 checkout_branch
 
-# puppet-profiles repository checkout and master rebase
+# puppet-profiles repository checkout, rebasing on master
 cd "$VAGRANTDIR/scratch/puppet-profiles"
 git checkout master
 git pull
@@ -79,8 +91,7 @@ cd "$VAGRANTDIR"
 vagrant up
 sleep 2
 vagrant ssh -c \
-  "sudo /opt/puppetlabs/bin/puppet apply \
-      --environment $VAGRANTBRANCH /etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests/"
+  "sudo /opt/puppetlabs/bin/puppet apply --environment $VAGRANTBRANCH $PUPPETINIT"
 
 # Root login
 vagrant ssh -c "sudo -i"
