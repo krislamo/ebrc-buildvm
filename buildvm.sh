@@ -1,7 +1,15 @@
 #!/bin/bash
 
+# Remove git alternatives reference
+cleanup_alt () {
+  if [[ -f .git/objects/info/alternates ]]; then
+    rm .git/objects/info/alternates
+  fi
+}
+
 # Function definition to checkout branch $VAGRANTENV if it isn't already there
 checkout_branch () {
+  cleanup_alt
   CURRENTBRANCH=$(git status | awk 'NR==1{print $3}')
   if [[ ! "$VAGRANTBRANCH" == "$CURRENTBRANCH" ]]; then
     git checkout "$VAGRANTBRANCH"
@@ -78,6 +86,7 @@ checkout_branch
 
 # puppet-profiles repository checkout, rebasing on master
 cd "$VAGRANTDIR/scratch/puppet-profiles"
+cleanup_alt
 git checkout master
 git pull
 git checkout $VAGRANTBRANCH
@@ -89,11 +98,40 @@ VAGRANTBOXSTATE=$(vboxmanage list runningvms | grep "$VAGRANTBOX" | wc -l)
 vboxmanage snapshot "$VAGRANTBOX" restore "$VAGRANTSNAP"
 
 # Apply Puppet to virtual machine
+COPY_MODULES=$(for key in "${!MODULES[@]}"; do echo MODULES[$key]=\"${MODULES[$key]}\"; done)
+SCRIPT=$(cat <<-END
+  set -xe;
+
+  GIT_HOST="$GIT_HOST";
+  GIT_PORT="$GIT_PORT";
+  if [[ ! -z \$GIT_HOST ]] && [[ ! -z \$GIT_PORT ]]; then
+    ssh-keyscan -p \$GIT_PORT \$GIT_HOST | sudo tee /root/.ssh/known_hosts
+  fi
+
+  sudo rm -rf /root/.r10k &&
+  sudo /usr/local/bin/r10k deploy environment $VAGRANTBRANCH -pv;
+
+  cd /etc/puppetlabs/code/environments/$VAGRANTBRANCH &&
+  sudo rm -rf manifests Puppetfile data;
+  sudo ln -s /vagrant/scratch/puppet-control/manifests manifests;
+  sudo ln -s /vagrant/scratch/puppet-control/Puppetfile Puppetfile;
+  sudo ln -s /vagrant/scratch/puppet-hiera data;
+
+  declare -A MODULES
+  $COPY_MODULES
+
+  for mod in "\${!MODULES[@]}"
+  do
+    sudo rm -rf modules/\${mod};
+    sudo ln -s \${MODULES[\$mod]} modules/\${mod};
+  done
+
+  sudo /opt/puppetlabs/bin/puppet apply --environment $VAGRANTBRANCH $PUPPETINIT;
+  sudo -i;
+END
+)
+
 cd "$VAGRANTDIR"
 vagrant up
 sleep 2
-vagrant ssh -c \
-  "sudo /opt/puppetlabs/bin/puppet apply --environment $VAGRANTBRANCH $PUPPETINIT"
-
-# Root login
-vagrant ssh -c "sudo -i"
+vagrant ssh -c "$SCRIPT"
