@@ -134,4 +134,5 @@ END
 cd "$VAGRANTDIR"
 vagrant up
 sleep 2
+ssh-add
 vagrant ssh -c "$SCRIPT"
