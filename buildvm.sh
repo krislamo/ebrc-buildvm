@@ -25,6 +25,14 @@ function checkout_branch () {
 	fi
 }
 
+# Check that a folder contains a git repository
+function repo_check () {
+	if [ ! -f "$1/.git/HEAD" ]; then
+		echo -e "ERROR: REPO '${1}' is not a git repository"
+		exit 1
+	fi
+}
+
 # Restore vagrant virtual machine to previous snapshot
 function vagrant_restore () {
 	local RESPONSE
@@ -117,13 +125,16 @@ function vagrant_restore () {
 unset APPLY
 unset BUILD
 unset DEPLOY
+unset EBRC_BUILDVM
 unset ENV
 unset FROMSCRATCH
 unset HOSTINITPATH
 unset INITOVERRIDE
 unset LINKMODS
 unset PUPPETCONTROL
+unset PUPPETHIERA
 unset PUPPETINIT
+unset PUPPETPROFILES
 unset REPO
 unset RESTORE
 unset VAGRANTBRANCH
@@ -152,19 +163,24 @@ if [ "$BUILD" == "true" ]; then
 	APPLY="true"
 fi
 
-# Parameters
-REPO="$1"
+# Required parameter REPO (remove trailing '/')
+REPO="${1%/}"
+
+# Assumptions
+EBRC_BUILDVM="$REPO/scratch/ebrc-buildvm"
+PUPPETCONTROL="$REPO/scratch/puppet-control"
+PUPPETHIERA="$REPO/scratch/puppet-hiera"
+PUPPETPROFILES="$REPO/scratch/puppet-profiles"
+
+# Default environment is "main"
 [ -z "$ENV" ] && ENV="main"
 
-# Check that REPO points to an actual git repository
-if [ ! -f "$REPO/.git/HEAD" ]; then
-	echo -e "ERROR: REPO '${REPO}' is not a git repository"
-	exit 1
-fi
+# Check that REPO points to an actual git repository for vagrant-puppet
+repo_check "$REPO"
 
 # Check for proper env directory and source it
-if [ ! -f "$REPO/scratch/ebrc-buildvm/env/$ENV" ]; then
-	echo "ERROR: ENV file $REPO/scratch/ebrc-buildvm/env/$ENV does not exist"
+if [ ! -f "$EBRC_BUILDVM/env/$ENV" ]; then
+	echo "ERROR: ENV file $EBRC_BUILDVM/env/$ENV does not exist"
 	exit 1
 fi
 
@@ -173,15 +189,14 @@ set -x
 
 # Source dynamic configuration plus additional settings
 # shellcheck source=/dev/null
-source "$REPO/scratch/ebrc-buildvm/env/$ENV"
+source "$EBRC_BUILDVM/env/$ENV"
 
-# Check for $VAGRANTBRANCH variable
+# Check for $VAGRANTBRANCH variable and set PUPPETINIT
 if [ -z "$VAGRANTBRANCH" ]; then
 	echo "ERROR: VAGRANTBRANCH is undefined"
 	exit 1
-else
-	PUPPETINIT="/etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests"
 fi
+PUPPETINIT="/etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests"
 
 # Validate FROMSCRATCH setting
 [ -n "$FROMSCRATCH" ] &&
@@ -191,8 +206,9 @@ fi
 	fi
 
 # Determine if there is a site.pp override in puppet-control/manifests
+# Backs up your init.pp file to /tmp/buildvm-initbak/init-<SHA1-SUM-OF-FILE>.pp
 if [ -n "$INITOVERRIDE" ]; then
-	HOSTINITPATH="$REPO/scratch/puppet-control/manifests/$INITOVERRIDE"
+	HOSTINITPATH="$PUPPETCONTROL/manifests/$INITOVERRIDE"
 
 	if [ ! -f "$HOSTINITPATH/$ENV-init.txt" ]; then
 		echo "ERROR: $ENV-init.txt override not found"
@@ -215,16 +231,18 @@ if [ -n "$FROMSCRATCH" ]; then
 fi
 
 # puppet-control repository checkout
-PUPPETCONTROL="$REPO/scratch/puppet-control"
+repo_check "$PUPPETCONTROL"
 cd "$PUPPETCONTROL"
 checkout_branch
 
 # puppet-hiera respository checkout
-cd "$REPO/scratch/puppet-hiera"
+repo_check "$PUPPETHIERA"
+cd "$PUPPETHIERA"
 checkout_branch
 
 # puppet-profiles repository checkout, rebasing on master
-cd "$REPO/scratch/puppet-profiles"
+repo_check "$PUPPETPROFILES"
+cd "$PUPPETPROFILES"
 cleanup_alt
 git checkout master
 git pull
@@ -232,7 +250,7 @@ git checkout "$VAGRANTBRANCH"
 git rebase master
 
 # Run/apply vagrant/puppet options
-[ "$RESTORE" == "true" ] && vagrant_restore
-[ "$DEPLOY" == "true" ] && puppet_deploy
+[ "$RESTORE" == "true" ]  && vagrant_restore
+[ "$DEPLOY" == "true" ]   && puppet_deploy
 [ "$LINKMODS" == "true" ] && puppet_relink
-[ "$APPLY" == "true" ] && puppet_apply
+[ "$APPLY" == "true" ]    && puppet_apply
