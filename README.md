@@ -1,12 +1,47 @@
-## build-puppetvm
+## EBRC-BuildVM
 
-This repository contains a building script for the [vagrant-puppet4](https://github.com/krislamo/vagrant-puppet4) project. Notably, this may include personal idiosyncrasies for BRC puppet development that others may or may not find consistent with their workflow.
+This repository contains a building script for the [vagrant-puppet](https://github.com/krislamo/vagrant-puppet) project. Notably, this may include personal idiosyncrasies for VEuPathDB BRC Puppet development that other administrators may or may not find consistent with their workflow.
+
+### Install
+1. Clone this git repository under `vagrant-puppet/scratch`,<br />
+   i.e., `vagrant-puppet/scratch/ebrc-buildvm`
+
+    ```
+    git clone git@github.com:krislamo/ebrc-buildvm.git
+    ```
+2. Symbolic link to `buildvm.sh` script
+
+    ```
+    cd ebrc-buildvm
+    sudo ln -s "$(pwd)/buildvm.sh" /usr/local/bin/buildvm
+    ```
+
+3. Set the environment in `ebrc-buildvm/env/main`. Sample:
+
+    ```
+    # Vagrant settings + Puppet init override
+    VAGRANTBOX=vagrant-puppet_default_X
+    VAGRANTSNAP="Working SAVM"
+    VAGRANTBRANCH=ksavm
+    INITOVERRIDE=mytests
+
+    # Symlinking for quick Puppet apply, i.e., buildvm -a ./vagrant-puppet
+    declare -A MODULES
+    MODULES[profiles]="/vagrant/scratch/puppet-profiles"
+
+    # For ssh-keyscan on internal repos used for r10k deploy
+    GIT_HOST=git.example.org
+    GIT_PORT=22
+    ```
+4. Run `buildvm` against the `vagrant-puppet` directory
+    ```
+    buildvm -b ./vagrant-puppet
+    ```
 
 ### Environment
-Different `build-puppetvm` environments allow you to switch which virtual machine, snapshot, and puppet environment you're using for development. This is accomplished using bash shell variables set inside a file named after the environment. For example, the default environment named "main" is configured in the `./env/main` file.
+Different `ebrc-buildvm` environments allow you to switch which virtual machine, snapshot, and Puppet environment you're using for development. This is accomplished using bash shell variables set inside a file named after the environment. For example, the default environment named "main" is configured in the `./env/main` file.
 
-To use other environments, pass the name of the environment through the first argument in the shell script.<br/>
-i.e. `./buildvm.sh otherenv`
+To use other environments, pass the name of the environment to the `-e` flag, i.e., `buildvm -e otherenv`
 
 ##### Variables
 * `VAGRANTBOX` - The name of the virtual machine used for provisioning.<br/>
@@ -18,13 +53,10 @@ i.e. `./buildvm.sh otherenv`
     `vboxmanage snapshot "$VAGRANTBOX" list | grep Name`
 
 * `VAGRANTBRANCH` - The name of the puppet environment and branch names used for git checkouts.
-  - The following repositories are assumed to have this branch name: `puppet-control`, `puppet-hiera`, `puppet-profiles`. Additionally, the puppet environment used for provisioning is expected to have this shared name.
-
-* `VAGRANTDIR` - The `vagrant-puppet4` directory on the host machine
-  - A primary assumption is that your `puppet-control`, `puppet-hiera`, and `puppet-profiles` repositories exist under the `vagrant-puppet4` scratch directory, e.g., `vagrant-puppet4/scratch/puppet-control`. This setup allows for a quick `puppet apply` without time-consuming r10k deployments on every change.
+  - The following repositories are assumed to have this branch name: `puppet-control`, `puppet-hiera`, `puppet-profiles`. Additionally, the Puppet environment used for provisioning is expected to have this shared name.
 
 * `FROMSCRATCH` (OPTIONAL) - A directory to copy data from into the `$VAGRANTDIR/scratch` directory
-  - If this option is set, the script will rsync data from the specified location into the vagrant-puppet4 scratch directory. This is useful for saving disk space (via hard links) for multiple virtual machines and centralizing puppet code editing.
+  - If this option is set, the script will rsync data from the specified location into the vagrant-puppet4 scratch directory. This is useful for saving disk space (via hard links) for multiple virtual machines and centralizing Puppet code editing.
 
 * `INITOVERRIDE` (OPTIONAL) - A subdirectory at `puppet-control/manfiests/$INITOVERRIDE/` to move init.pp files
     - This setup requires a slight modification to `puppet-control/manifests/site.pp` to include a subdirectory with a `init.pp` file.<br/>e.g.,

@@ -98,6 +98,7 @@ function puppet_deploy () {
 	vagrant_run "$SCRIPT"
 }
 
+# Restore Virtualbox VM to previous snapshot
 function vagrant_restore () {
 	local VMSTATE
 
@@ -114,6 +115,7 @@ function vagrant_restore () {
 
 # Clean environment
 unset APPLY
+unset BUILD
 unset DEPLOY
 unset ENV
 unset FROMSCRATCH
@@ -127,9 +129,10 @@ unset RESTORE
 unset VAGRANTBRANCH
 
 # Options
-while getopts ':ade:lr' OPTION; do
+while getopts ':abde:lr' OPTION; do
 	case "$OPTION" in
 		a) APPLY="true";;
+		b) BUILD="true";;
 		d) DEPLOY="true";;
 		e) ENV="$OPTARG";;
 		l) LINKMODS="true";;
@@ -141,12 +144,13 @@ while getopts ':ade:lr' OPTION; do
 done
 shift "$((OPTIND -1))"
 
-##########################
-### Changes start here ###
-##########################
-
-# Print commands and their arguments as they are executed
-set -x
+# Build option -b implies -rdla options
+if [ "$BUILD" == "true" ]; then
+	RESTORE="true"
+	DEPLOY="true"
+	LINKMODS="true"
+	APPLY="true"
+fi
 
 # Parameters
 REPO="$1"
@@ -159,14 +163,17 @@ if [ ! -f "$REPO/.git/HEAD" ]; then
 fi
 
 # Check for proper env directory and source it
-if [ ! -f "$REPO/scratch/build-puppetvm/env/$ENV" ]; then
-	echo "ERROR: ENV file $REPO/scratch/build-puppetvm/env/$ENV does not exist"
+if [ ! -f "$REPO/scratch/ebrc-buildvm/env/$ENV" ]; then
+	echo "ERROR: ENV file $REPO/scratch/ebrc-buildvm/env/$ENV does not exist"
 	exit 1
 fi
 
+# Print commands and their arguments as they are executed
+set -x
+
 # Source dynamic configuration plus additional settings
 # shellcheck source=/dev/null
-source "$REPO/scratch/build-puppetvm/env/$ENV"
+source "$REPO/scratch/ebrc-buildvm/env/$ENV"
 
 # Check for $VAGRANTBRANCH variable
 if [ -z "$VAGRANTBRANCH" ]; then
@@ -183,6 +190,7 @@ fi
 		exit 1
 	fi
 
+# Determine if there is a site.pp override in puppet-control/manifests
 if [ -n "$INITOVERRIDE" ]; then
 	HOSTINITPATH="$REPO/scratch/puppet-control/manifests/$INITOVERRIDE"
 
@@ -190,8 +198,12 @@ if [ -n "$INITOVERRIDE" ]; then
 		echo "ERROR: $ENV-init.txt override not found"
 		exit 1
 	else
-		rm -rf "$HOSTINITPATH/init.pp"
-		cp "$HOSTINITPATH/$ENV-init.txt" "$HOSTINITPATH/init.pp"
+		mkdir -p /tmp/buildvm-initbak
+		echo "NOTICE: Backing up $HOSTINITPATH/init.pp to /tmp/buildvm-initbak/"
+		cp -u "$HOSTINITPATH/init.pp" \
+			"/tmp/buildvm-initbak/init-$(sha1sum "$HOSTINITPATH/init.pp" | awk '{print $1}').pp"
+		rm -f "$HOSTINITPATH/init.pp"
+		cp -u "$HOSTINITPATH/$ENV-init.txt" "$HOSTINITPATH/init.pp"
 	fi
 else
 	PUPPETINIT="$PUPPETINIT/site.pp"
