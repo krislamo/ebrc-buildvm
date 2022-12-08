@@ -38,6 +38,19 @@ This repository contains a building script for the [vagrant-puppet](https://gith
     buildvm -b ./vagrant-puppet
     ```
 
+### Options
+By default, the `buildvm` script will apply any overrides (see INITOVERRIDE) or syncing (see FROMSCRATCH) and ensure the VAGRANTBRANCH is checked out on puppet-control, puppet-hiera, and puppet-profiles. Additionally, for puppet-profiles, the script will ensure you're working with an up-to-date branch by rebasing on master.
+
+Additional options:
+* `-a` - Run puppet-apply against the virtual machine. Use alone for a quick puppet-apply for already symlinked Puppet modules.
+* `-b` - Builds the VM from a snapshot, deploying Puppet with r10k, symlinking select modules, and running puppet-apply. Sets options: `-rdla`
+* `-d` - Deploy your Puppet environment using r10k-deploy inside the VM. Use with `-l` to ensure module symlinks are restored after deploying.
+* `-e` - Set the ebrc-buildvm environment file, i.e., `ebrc-buildvm/env/$ENV`—defaults to `main`.
+* `-l` - Remove select modules defined as keys in the `MODULES[]` array and replace them with symlinks to its value for a quick puppet-apply.
+* `-r` - Restores a VM to a previous snapshot before applying any other options.
+
+
+
 ### Environment
 Different `ebrc-buildvm` environments allow you to switch which virtual machine, snapshot, and Puppet environment you're using for development. This is accomplished using bash shell variables set inside a file named after the environment. For example, the default environment named "main" is configured in the `./env/main` file.
 

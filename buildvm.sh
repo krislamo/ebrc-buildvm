@@ -198,12 +198,15 @@ if [ -z "$VAGRANTBRANCH" ]; then
 fi
 PUPPETINIT="/etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests"
 
-# Validate FROMSCRATCH setting
-[ -n "$FROMSCRATCH" ] &&
+# Optional scratch directory sync
+if [ -n "$FROMSCRATCH" ]; then
 	if [ ! -d "$FROMSCRATCH" ]; then
 		echo "ERROR: '$FROMSCRATCH' does not exist"
 		exit 1
+	else
+		rsync -avr -H --delete "$FROMSCRATCH" "$REPO/scratch"
 	fi
+fi
 
 # Determine if there is a site.pp override in puppet-control/manifests
 # Backs up your init.pp file to /tmp/buildvm-initbak/init-<SHA1-SUM-OF-FILE>.pp
@@ -223,11 +226,6 @@ if [ -n "$INITOVERRIDE" ]; then
 	fi
 else
 	PUPPETINIT="$PUPPETINIT/site.pp"
-fi
-
-# Optional scratch directory sync
-if [ -n "$FROMSCRATCH" ]; then
-	rsync -avr -H --delete "$FROMSCRATCH" "$REPO/scratch"
 fi
 
 # puppet-control repository checkout
