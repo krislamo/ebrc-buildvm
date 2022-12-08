@@ -39,7 +39,7 @@ This repository contains a building script for the [vagrant-puppet](https://gith
     ```
 
 ### Options
-By default, the `buildvm` script will apply any overrides (see INITOVERRIDE) or syncing (see FROMSCRATCH) and ensure the VAGRANTBRANCH is checked out on puppet-control, puppet-hiera, and puppet-profiles. Additionally, for puppet-profiles, the script will ensure you're working with an up-to-date branch by rebasing on master.
+By default, the `buildvm` script will apply any overrides (see `INITOVERRIDE`) or syncing (see `FROMSCRATCH`) and ensure the `VAGRANTBRANCH` is checked out on puppet-control, puppet-hiera, and puppet-profiles. Additionally, for puppet-profiles, the script will ensure you're working with an up-to-date branch by rebasing on master.
 
 Additional options:
 * `-a` - Run puppet-apply against the virtual machine. Use alone for a quick puppet-apply for already symlinked Puppet modules.
@@ -66,7 +66,7 @@ To use other environments, pass the name of the environment to the `-e` flag, i.
     `vboxmanage snapshot "$VAGRANTBOX" list | grep Name`
 
 * `VAGRANTBRANCH` - The name of the puppet environment and branch names used for git checkouts.
-  - The following repositories are assumed to have this branch name: `puppet-control`, `puppet-hiera`, `puppet-profiles`. Additionally, the Puppet environment used for provisioning is expected to have this shared name.
+  - The following repositories are assumed to have this branch name: `puppet-control`, `puppet-hiera`, `puppet-profiles`. Additionally, the Puppet r10k environment used for provisioning is expected to have this shared name.
 
 * `FROMSCRATCH` (OPTIONAL) - A directory to copy data from into the `vagrant-puppet/scratch` directory
   - If this option is set, the script will rsync data from the specified location into the vagrant-puppet scratch directory. This is useful for saving disk space (via hard links) for multiple virtual machines and centralizing Puppet code editing.
