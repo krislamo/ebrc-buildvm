@@ -68,8 +68,8 @@ To use other environments, pass the name of the environment to the `-e` flag, i.
 * `VAGRANTBRANCH` - The name of the puppet environment and branch names used for git checkouts.
   - The following repositories are assumed to have this branch name: `puppet-control`, `puppet-hiera`, `puppet-profiles`. Additionally, the Puppet environment used for provisioning is expected to have this shared name.
 
-* `FROMSCRATCH` (OPTIONAL) - A directory to copy data from into the `$VAGRANTDIR/scratch` directory
-  - If this option is set, the script will rsync data from the specified location into the vagrant-puppet4 scratch directory. This is useful for saving disk space (via hard links) for multiple virtual machines and centralizing Puppet code editing.
+* `FROMSCRATCH` (OPTIONAL) - A directory to copy data from into the `vagrant-puppet/scratch` directory
+  - If this option is set, the script will rsync data from the specified location into the vagrant-puppet scratch directory. This is useful for saving disk space (via hard links) for multiple virtual machines and centralizing Puppet code editing.
 
 * `INITOVERRIDE` (OPTIONAL) - A subdirectory at `puppet-control/manfiests/$INITOVERRIDE/` to move init.pp files
     - This setup requires a slight modification to `puppet-control/manifests/site.pp` to include a subdirectory with a `init.pp` file.<br/>e.g.,

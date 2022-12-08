@@ -191,13 +191,6 @@ set -x
 # shellcheck source=/dev/null
 source "$EBRC_BUILDVM/env/$ENV"
 
-# Check for $VAGRANTBRANCH variable and set PUPPETINIT
-if [ -z "$VAGRANTBRANCH" ]; then
-	echo "ERROR: VAGRANTBRANCH is undefined"
-	exit 1
-fi
-PUPPETINIT="/etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests"
-
 # Optional scratch directory sync
 if [ -n "$FROMSCRATCH" ]; then
 	if [ ! -d "$FROMSCRATCH" ]; then
@@ -207,6 +200,18 @@ if [ -n "$FROMSCRATCH" ]; then
 		rsync -avr -H --delete "$FROMSCRATCH" "$REPO/scratch"
 	fi
 fi
+
+# Check for $VAGRANTBRANCH variable and set PUPPETINIT
+if [ -z "$VAGRANTBRANCH" ]; then
+	echo "ERROR: VAGRANTBRANCH is undefined"
+	exit 1
+fi
+PUPPETINIT="/etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests"
+
+# puppet-control repository checkout
+repo_check "$PUPPETCONTROL"
+cd "$PUPPETCONTROL"
+checkout_branch
 
 # Determine if there is a site.pp override in puppet-control/manifests
 # Backs up your init.pp file to /tmp/buildvm-initbak/init-<SHA1-SUM-OF-FILE>.pp
@@ -227,11 +232,6 @@ if [ -n "$INITOVERRIDE" ]; then
 else
 	PUPPETINIT="$PUPPETINIT/site.pp"
 fi
-
-# puppet-control repository checkout
-repo_check "$PUPPETCONTROL"
-cd "$PUPPETCONTROL"
-checkout_branch
 
 # puppet-hiera respository checkout
 repo_check "$PUPPETHIERA"
