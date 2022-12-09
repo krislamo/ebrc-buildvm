@@ -7,18 +7,10 @@ set -e
 ### Functions ###
 #################
 
-# Remove git alternatives reference
-function cleanup_alt () {
-	if [ -f .git/objects/info/alternates ]; then
-		rm .git/objects/info/alternates
-	fi
-}
-
 # Function definition to checkout branch $VAGRANTENV if it isn't already there
 function checkout_branch () {
 	local CURRENTBRANCH
 
-	cleanup_alt
 	CURRENTBRANCH=$(git status | awk 'NR==1{print $3}')
 	if [ ! "$VAGRANTBRANCH" == "$CURRENTBRANCH" ]; then
 		git checkout "$VAGRANTBRANCH"
@@ -30,6 +22,20 @@ function repo_check () {
 	if [ ! -f "$1/.git/HEAD" ]; then
 		echo -e "ERROR: REPO '${1}' is not a git repository"
 		exit 1
+	fi
+}
+
+# Removes git object directory references that are invalid on the host
+# I couldn't find an option to prevent r10k-deploy from causing git cli errors like:
+#	error: object directory /root/.r10k/git/-vagrant-scratch-puppet-dctl/objects does not exist;
+#	check .git/objects/info/alternates
+function repo_clean () {
+	repo_check "$1"
+	cd "$1"
+	if [ -f .git/objects/info/alternates ]; then
+		if grep -qe "^/root/.r10k/git/-vagrant-scratch-" .git/objects/info/alternates; then
+			sed -i '/^\/root\/.r10k\/git\/-vagrant-scratch-/g' .git/objects/info/alternates
+		fi
 	fi
 }
 
@@ -87,6 +93,7 @@ function puppet_relink () {
 
 # r10k puppet deploy
 function puppet_deploy () {
+	local MOD
 	local SCRIPT
 
 	SCRIPT=$(cat <<-END
@@ -104,6 +111,13 @@ function puppet_deploy () {
 	END
 	)
 	vagrant_run "$SCRIPT"
+
+	# Clean r10k pollution
+	repo_clean "$PUPPETCONTROL"
+	repo_clean "$PUPPETHIERA"
+	for MOD in "${!MODULES[@]}"; do
+		repo_clean "$REPO/scratch/$(basename "${MODULES[$MOD]}")"
+	done
 }
 
 # Restore Virtualbox VM to previous snapshot
@@ -241,7 +255,6 @@ checkout_branch
 # puppet-profiles repository checkout, rebasing on master
 repo_check "$PUPPETPROFILES"
 cd "$PUPPETPROFILES"
-cleanup_alt
 git checkout master
 git pull
 git checkout "$VAGRANTBRANCH"
