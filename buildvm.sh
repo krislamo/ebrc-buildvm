@@ -39,18 +39,6 @@ function repo_clean () {
 	fi
 }
 
-# Restore vagrant virtual machine to previous snapshot
-function vagrant_restore () {
-	local RESPONSE
-
-	echo "You are about to restore '$VAGRANTBOX' to '$VAGRANTSNAP'"
-	read -r -p "Are you sure? [y/N] " RESPONSE
-	if [[ ! "$RESPONSE" =~ ^([yY])$ ]]; then
-		echo "FATAL: $USER declined to restore VM"
-		exit 1
-	fi
-}
-
 # Run commands or inline heredoc scripts
 function vagrant_run () {
 	ssh-add
@@ -124,7 +112,9 @@ function puppet_deploy () {
 function vagrant_restore () {
 	local VMSTATE
 
+	set +e # temporarily turn off
 	VMSTATE=$(vboxmanage list runningvms | grep -c "$VAGRANTBOX")
+	set -e # turn back on
 	[ ! "$VMSTATE" -eq 0 ] && vboxmanage controlvm "$VAGRANTBOX" poweroff
 	vboxmanage snapshot "$VAGRANTBOX" restore "$VAGRANTSNAP"
 	cd "$REPO"
