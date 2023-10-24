@@ -112,11 +112,31 @@ function puppet_deploy () {
 function vagrant_restore () {
 	local VMSTATE
 
-	set +e # temporarily turn off
-	VMSTATE=$(vboxmanage list runningvms | grep -c "$VAGRANTBOX")
-	set -e # turn back on
-	[ ! "$VMSTATE" -eq 0 ] && vboxmanage controlvm "$VAGRANTBOX" poweroff
-	vboxmanage snapshot "$VAGRANTBOX" restore "$VAGRANTSNAP"
+	# Check for a vagrant provider or make best guess assumptions
+	[ -z "$VAGRANTPROVIDER" ] && which vboxmanage > /dev/null 2>&1 && VAGRANTPROVIDER="virtualbox"
+	[ -z "$VAGRANTPROVIDER" ] && which virsh > /dev/null 2>&1 && VAGRANTPROVIDER="libvirt"
+
+	case "$VAGRANTPROVIDER" in
+		"virtualbox")
+			set +e # temporarily turn off
+			VMSTATE=$(vboxmanage list runningvms | grep -c "$VAGRANTBOX")
+			set -e # turn back on
+			[ ! "$VMSTATE" -eq 0 ] && vboxmanage controlvm "$VAGRANTBOX" poweroff
+			vboxmanage snapshot "$VAGRANTBOX" restore "$VAGRANTSNAP"
+			;;
+		"libvirt")
+			set +e # temporarily turn off
+			VMSTATE=$(sudo virsh list --name --all | grep -c "$VAGRANTBOX")
+			set -e # turn back on
+			[ ! "$VMSTATE" -eq 0 ] && sudo virsh destroy "$VAGRANTBOX"
+			virsh revert-to-snapshot "$VAGRANTBOX" "$VAGRANTSNAP"
+			;;
+		*)
+			echo "Error: Unknown provider. Supported providers are 'virtualbox' and 'libvirt'"
+			exit 1
+			;;
+	esac
+
 	cd "$REPO"
 	vagrant up
 }
@@ -142,6 +162,7 @@ unset PUPPETPROFILES
 unset REPO
 unset RESTORE
 unset VAGRANTBRANCH
+unset VAGRANTPROVIDER
 
 # Options
 while getopts ':abde:lr' OPTION; do
