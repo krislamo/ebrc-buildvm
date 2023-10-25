@@ -89,9 +89,32 @@ function puppet_deploy () {
 
 		GIT_HOST="$GIT_HOST";
 		GIT_PORT="$GIT_PORT";
+		SSHUTTLE_HOST="$SSHUTTLE_HOST"
+
+		sudo mkdir -p /root/.ssh/
+		sudo touch /root/.ssh/known_hosts
+		sudo chmod 700 /root/.ssh/
+		cat << 'EOF' | sudo tee /root/.ssh/config > /dev/null
+			Host *.${GIT_HOST#*.}
+				Port $GIT_PORT
+		EOF
 
 		if [ -n "\$GIT_HOST" ] && [ -n "\$GIT_PORT" ]; then
-			ssh-keyscan -p "\$GIT_PORT" "\$GIT_HOST" | sudo tee /root/.ssh/known_hosts
+			if [ "\$(sudo grep -c "\$GIT_HOST" /root/.ssh/known_hosts)" == "0" ]; then
+				ssh-keyscan -p "\$GIT_PORT" "\$GIT_HOST" | \
+					sudo tee -a /root/.ssh/known_hosts
+			fi
+		fi
+
+		if [ -n "$SSHUTTLE_CMD" ]; then
+			if [ "\$(sudo grep -c "\$SSHUTTLE_HOST" /root/.ssh/known_hosts)" == "0" ]; then
+				ssh-keyscan -p "\$GIT_PORT" "\$SSHUTTLE_HOST" | \
+					sudo tee -a /root/.ssh/known_hosts
+			fi
+
+			sudo yum install screen python3-pip -y
+			sudo pip3 install sshuttle
+			sudo screen -S sshuttle -dm $SSHUTTLE_CMD
 		fi
 
 		sudo rm -rf /root/.r10k &&
@@ -112,11 +135,33 @@ function puppet_deploy () {
 function vagrant_restore () {
 	local VMSTATE
 
-	set +e # temporarily turn off
-	VMSTATE=$(vboxmanage list runningvms | grep -c "$VAGRANTBOX")
-	set -e # turn back on
-	[ ! "$VMSTATE" -eq 0 ] && vboxmanage controlvm "$VAGRANTBOX" poweroff
-	vboxmanage snapshot "$VAGRANTBOX" restore "$VAGRANTSNAP"
+	# Check for a vagrant provider or make best guess assumptions
+	[ -z "$VAGRANTPROVIDER" ] && which vboxmanage > /dev/null 2>&1 && VAGRANTPROVIDER="virtualbox"
+	[ -z "$VAGRANTPROVIDER" ] && which virsh > /dev/null 2>&1 && VAGRANTPROVIDER="libvirt"
+
+	case "$VAGRANTPROVIDER" in
+		"virtualbox")
+			set +e # temporarily turn off
+			VMSTATE=$(vboxmanage list runningvms | grep -c "$VAGRANTBOX")
+			set -e # turn back on
+			[ ! "$VMSTATE" -eq 0 ] && vboxmanage controlvm "$VAGRANTBOX" poweroff
+			vboxmanage snapshot "$VAGRANTBOX" restore "$VAGRANTSNAP"
+			;;
+		"libvirt")
+			VIRSH_PATH=$(which virsh)
+			set +e # temporarily turn off
+			echo "[NOTICE]: sudo access is needed for root libvirt VMs"
+			VMSTATE=$(sudo "$VIRSH_PATH" list --name --state-running | grep -c "$VAGRANTBOX")
+			set -e # turn back on
+			[ ! "$VMSTATE" -eq 0 ] && sudo virsh destroy "$VAGRANTBOX"
+			sudo virsh snapshot-revert "$VAGRANTBOX" "$VAGRANTSNAP"
+			;;
+		*)
+			echo "Error: Unknown provider. Supported providers are 'virtualbox' and 'libvirt'"
+			exit 1
+			;;
+	esac
+
 	cd "$REPO"
 	vagrant up
 }
@@ -141,7 +186,10 @@ unset PUPPETINIT
 unset PUPPETPROFILES
 unset REPO
 unset RESTORE
+unset SSHUTTLE_CMD
+unset SSHUTTLE_HOST
 unset VAGRANTBRANCH
+unset VAGRANTPROVIDER
 
 # Options
 while getopts ':abde:lr' OPTION; do
