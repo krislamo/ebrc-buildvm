@@ -90,6 +90,7 @@ function puppet_deploy () {
 		GIT_HOST="$GIT_HOST";
 		GIT_PORT="$GIT_PORT";
 		SSHUTTLE_HOST="$SSHUTTLE_HOST"
+		SSHUTTLE_CMD="$SSHUTTLE_CMD"
 
 		sudo mkdir -p /root/.ssh/
 		sudo touch /root/.ssh/known_hosts
@@ -99,22 +100,31 @@ function puppet_deploy () {
 				Port $GIT_PORT
 		EOF
 
-		if [ -n "\$GIT_HOST" ] && [ -n "\$GIT_PORT" ]; then
-			if [ "\$(sudo grep -c "\$GIT_HOST" /root/.ssh/known_hosts)" == "0" ]; then
-				ssh-keyscan -p "\$GIT_PORT" "\$GIT_HOST" | \
-					sudo tee -a /root/.ssh/known_hosts
-			fi
-		fi
-
-		if [ -n "$SSHUTTLE_CMD" ]; then
+		if [ -n "\$SSHUTTLE_CMD" ]; then
 			if [ "\$(sudo grep -c "\$SSHUTTLE_HOST" /root/.ssh/known_hosts)" == "0" ]; then
 				ssh-keyscan -p "\$GIT_PORT" "\$SSHUTTLE_HOST" | \
 					sudo tee -a /root/.ssh/known_hosts
 			fi
 
 			sudo yum install screen python3-pip -y
-			sudo pip3 install sshuttle
-			sudo screen -S sshuttle -dm $SSHUTTLE_CMD
+			sudo pip3 install sshuttle 2>/dev/null
+			if [ ! "\$(sudo screen -ls | grep -c 'sshuttle_tunnel')" -gt 0 ]; then
+				sudo screen -S sshuttle_tunnel -dm $SSHUTTLE_CMD
+				echo "Waiting for sshuttle tunnel to come online"
+				sleep 10
+			fi
+
+			if [ ! "\$(sudo screen -ls | grep -c 'sshuttle_tunnel')" -gt 0 ]; then
+				echo "[ERROR]: Can't find sshuttle_tunnel screen"
+				exit 1
+			fi
+		fi
+
+		if [ -n "\$GIT_HOST" ] && [ -n "\$GIT_PORT" ]; then
+			if [ "\$(sudo grep -c "\$GIT_HOST" /root/.ssh/known_hosts)" == "0" ]; then
+				ssh-keyscan -p "\$GIT_PORT" "\$GIT_HOST" | \
+					sudo tee -a /root/.ssh/known_hosts
+			fi
 		fi
 
 		sudo rm -rf /root/.r10k &&
@@ -262,6 +272,7 @@ PUPPETINIT="/etc/puppetlabs/code/environments/$VAGRANTBRANCH/manifests"
 
 # puppet-control repository checkout
 repo_check "$PUPPETCONTROL"
+repo_clean "$PUPPETCONTROL"
 cd "$PUPPETCONTROL"
 checkout_branch
 
@@ -287,11 +298,13 @@ fi
 
 # puppet-hiera respository checkout
 repo_check "$PUPPETHIERA"
+repo_clean "$PUPPETHIERA"
 cd "$PUPPETHIERA"
 checkout_branch
 
 # puppet-profiles repository checkout, rebasing on master
 repo_check "$PUPPETPROFILES"
+repo_clean "$PUPPETPROFILES"
 cd "$PUPPETPROFILES"
 git checkout master
 git pull
