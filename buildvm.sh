@@ -45,11 +45,83 @@ function vagrant_run () {
 	vagrant ssh -c "$1"
 }
 
+# Add SSH config for root
+function ssh_config () {
+	local SSH_CONFIG
+	local CONFIG_RESULT
+
+	vagrant_run "sudo [ ! -d /root/.ssh ] && sudo mkdir -p /root/.ssh || exit 0"
+	vagrant_run "sudo [ ! -f /root/.ssh/known_hosts ] && sudo touch /root/.ssh/known_hosts || exit 0"
+	vagrant_run "sudo [ ! -f /root/.ssh/config ] && sudo touch /root/.ssh/config || exit 0"
+
+	SSH_CONFIG=$(cat <<-END
+		Host *.${GIT_HOST#*.}
+			Port $GIT_PORT
+	END
+	)
+
+	CONFIG_RESULT="$(vagrant_run "sudo grep -c \"${GIT_HOST#*.}\" /root/.ssh/config" | tr -d '\r')"
+	if [ "$CONFIG_RESULT" -eq 0 ]; then
+		vagrant_run "echo '$SSH_CONFIG' | sudo tee -a /root/.ssh/config"
+	fi
+}
+
+# Add the SSHUTTLE_HOST to known_hosts install and setup a sshuttle VPN
+function sshuttle_tunnel () {
+	local HOST_RESULT
+	local TUN_RESULT
+
+	# Must set the sshuttle command to run
+	if [ -n "$SSHUTTLE_CMD" ]; then
+
+		# Add SSH config if missing
+		ssh_config
+
+		# Add SSHUTTLE_HOST to root's known_hosts file
+		HOST_RESULT="$(vagrant_run "sudo grep -c \"$SSHUTTLE_HOST\" /root/.ssh/known_hosts" | tr -d '\r')"
+		if [ "$HOST_RESULT" -eq 0 ]; then
+			vagrant_run "ssh-keyscan -p \"$GIT_PORT\" \"$SSHUTTLE_HOST\" | sudo tee -a /root/.ssh/known_hosts"
+		fi
+
+		# Install screen/sshuttle if sshuttle isn't found in PATH
+		if [ -n "$(vagrant_run 'which sshuttle 2>&1')" ]; then
+			vagrant_run "sudo yum install screen python3-pip -y && sudo pip3 install sshuttle 2>/dev/null"
+		fi
+
+		# Test for sshuttle_tunnel screen and create new tunnel if it doesn't exist
+		TUN_RESULT="$(vagrant_run \"sudo screen -ls | grep -c 'sshuttle_tunnel'\" | tr -d '\r')"
+		if [ ! "$TUN_RESULT" -gt 0 ]; then
+			vagrant_run "sudo screen -S sshuttle_tunnel -dm $SSHUTTLE_CMD"
+			echo "Waiting for sshuttle tunnel to come online"
+			sleep 10
+
+			# Check to see if the tunnel is still there after creating a new one
+			TUN_RESULT="$(vagrant_run 'sudo screen -ls | grep -c sshuttle_tunnel' | tr -d '\r')"
+			if [ ! "$TUN_RESULT" -gt 0 ]; then
+				echo "[ERROR]: Can't find sshuttle_tunnel screen"
+				exit 1
+			fi
+
+			# Test endpoint if defined
+			if [ -n "$SSHUTTLE_ENDPOINT" ]; then
+				if [ ! "$(vagrant_run "$SSHUTTLE_ENDPOINT" | tr -d '\r')" -gt 0 ]; then
+					echo "Tunnel not working!"
+				fi
+			fi
+		fi
+	fi
+}
+
 # Run puppet apply inside the VM
 function puppet_apply () {
 	local SCRIPT
 
-	SCRIPT="sudo /opt/puppetlabs/bin/puppet apply --environment $VAGRANTBRANCH $PUPPETINIT"
+	if [ "$PUPPETDEBUG" == "true" ]; then
+		SCRIPT="sudo /opt/puppetlabs/bin/puppet apply --debug --environment $VAGRANTBRANCH $PUPPETINIT"
+	else
+		SCRIPT="sudo /opt/puppetlabs/bin/puppet apply --environment $VAGRANTBRANCH $PUPPETINIT"
+	fi
+
 	vagrant_run "$SCRIPT"
 }
 
@@ -84,41 +156,14 @@ function puppet_deploy () {
 	local MOD
 	local SCRIPT
 
+	# Add ssh config if missing
+	ssh_config
+
 	SCRIPT=$(cat <<-END
 		set -xe;
 
-		GIT_HOST="$GIT_HOST";
-		GIT_PORT="$GIT_PORT";
-		SSHUTTLE_HOST="$SSHUTTLE_HOST"
-		SSHUTTLE_CMD="$SSHUTTLE_CMD"
-
-		sudo mkdir -p /root/.ssh/
-		sudo touch /root/.ssh/known_hosts
-		sudo chmod 700 /root/.ssh/
-		cat << 'EOF' | sudo tee /root/.ssh/config > /dev/null
-			Host *.${GIT_HOST#*.}
-				Port $GIT_PORT
-		EOF
-
-		if [ -n "\$SSHUTTLE_CMD" ]; then
-			if [ "\$(sudo grep -c "\$SSHUTTLE_HOST" /root/.ssh/known_hosts)" == "0" ]; then
-				ssh-keyscan -p "\$GIT_PORT" "\$SSHUTTLE_HOST" | \
-					sudo tee -a /root/.ssh/known_hosts
-			fi
-
-			sudo yum install screen python3-pip -y
-			sudo pip3 install sshuttle 2>/dev/null
-			if [ ! "\$(sudo screen -ls | grep -c 'sshuttle_tunnel')" -gt 0 ]; then
-				sudo screen -S sshuttle_tunnel -dm $SSHUTTLE_CMD
-				echo "Waiting for sshuttle tunnel to come online"
-				sleep 10
-			fi
-
-			if [ ! "\$(sudo screen -ls | grep -c 'sshuttle_tunnel')" -gt 0 ]; then
-				echo "[ERROR]: Can't find sshuttle_tunnel screen"
-				exit 1
-			fi
-		fi
+		GIT_HOST="$GIT_HOST"
+		GIT_PORT="$GIT_PORT"
 
 		if [ -n "\$GIT_HOST" ] && [ -n "\$GIT_PORT" ]; then
 			if [ "\$(sudo grep -c "\$GIT_HOST" /root/.ssh/known_hosts)" == "0" ]; then
@@ -191,18 +236,20 @@ unset HOSTINITPATH
 unset INITOVERRIDE
 unset LINKMODS
 unset PUPPETCONTROL
+unset PUPPETDEBUG
 unset PUPPETHIERA
 unset PUPPETINIT
 unset PUPPETPROFILES
 unset REPO
 unset RESTORE
+unset SSHUTTLE
 unset SSHUTTLE_CMD
 unset SSHUTTLE_HOST
 unset VAGRANTBRANCH
 unset VAGRANTPROVIDER
 
 # Options
-while getopts ':abde:lr' OPTION; do
+while getopts ':abde:lrs' OPTION; do
 	case "$OPTION" in
 		a) APPLY="true";;
 		b) BUILD="true";;
@@ -210,6 +257,7 @@ while getopts ':abde:lr' OPTION; do
 		e) ENV="$OPTARG";;
 		l) LINKMODS="true";;
 		r) RESTORE="true";;
+		s) SSHUTTLE="true";;
 		?)
 			echo "ERROR: Invalid option"
 			exit 1;;
@@ -220,6 +268,7 @@ shift "$((OPTIND -1))"
 # Build option -b implies -rdla options
 if [ "$BUILD" == "true" ]; then
 	RESTORE="true"
+	SSHUTTLE="true"
 	DEPLOY="true"
 	LINKMODS="true"
 	APPLY="true"
@@ -313,6 +362,7 @@ git rebase master
 
 # Run/apply vagrant/puppet options
 [ "$RESTORE" == "true" ]  && vagrant_restore
+[ "$SSHUTTLE" == "true" ] && sshuttle_tunnel
 [ "$DEPLOY" == "true" ]   && puppet_deploy
 [ "$LINKMODS" == "true" ] && puppet_relink
 [ "$APPLY" == "true" ]    && puppet_apply
