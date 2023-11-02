@@ -275,7 +275,8 @@ if [ "$BUILD" == "true" ]; then
 fi
 
 # Required parameter REPO (remove trailing '/')
-REPO="${1%/}"
+[ -z "$1" ] && REPO="$(pwd)"
+[ "${REPO: -1}" == "/" ] && REPO="${REPO%/}"
 
 # Assumptions
 EBRC_BUILDVM="$REPO/scratch/ebrc-buildvm"
